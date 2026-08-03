@@ -1,0 +1,10 @@
+streamlit
+umap-learn
+hdbscan
+sentence-transformers
+requests
+pandas
+numpy
+google-genai
+pydantic
+plotly
