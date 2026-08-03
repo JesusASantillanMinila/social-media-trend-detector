@@ -221,9 +221,7 @@ if not GEMINI_API_KEY:
     st.warning("⚠️ Please configure your environmental variables to proceed.")
 
 # --- Upperbar Control Panel ---
-# Using a bordered container to visually group the inputs at the top of the page
 with st.container(border=True):
-    # vertical_alignment="bottom" ensures the run button lines up perfectly with the input boxes
     col1, col2, col3 = st.columns([2, 2, 1], vertical_alignment="bottom")
     
     with col1:
@@ -256,23 +254,15 @@ if run_btn:
         for idx, keyword in enumerate(all_keywords):
             df_temp = fetch_bluesky_posts(keyword, target_count=500)
             all_posts.append(df_temp)
-            # Update progress bar
             progress_bar.progress((idx + 1) / len(all_keywords))
             
         df_combined = pd.concat(all_posts, ignore_index=True)
         total_fetched = len(df_combined)
-        progress_bar.empty() # Clear the bar when done
+        progress_bar.empty()
         
         # 3. Filter Spam
         st.write("🧹 Scrubbing spam and low-value noise...")
         df_clean, spam_removed_count = filter_spam_posts(df_combined, threshold=spam_threshold)
-        
-        # Show a quick pie chart in the status window
-        fig_spam = go.Figure(data=[go.Pie(labels=['Clean Data', 'Spam Removed'], 
-                                          values=[len(df_clean), spam_removed_count],
-                                          hole=.4, marker_colors=['#00CC96', '#EF553B'])])
-        fig_spam.update_layout(margin=dict(t=0, b=0, l=0, r=0), height=200)
-        st.plotly_chart(fig_spam, use_container_width=True)
         
         # 4. Cluster & Extract
         if not df_clean.empty:
@@ -290,9 +280,9 @@ if run_btn:
     # --- Final Results Layout ---
     st.success(f"Successfully processed {total_fetched} posts and extracted key insights!")
     
-    col1, col2 = st.columns([2, 1])
+    col_map, col_health = st.columns([2, 1])
     
-    with col1:
+    with col_map:
         st.subheader("📊 Semantic Trend Map")
         df_viz = df_labeled.dropna(subset=['trend_name'])
         if not df_viz.empty:
@@ -302,16 +292,60 @@ if run_btn:
                 color_discrete_sequence=px.colors.qualitative.Bold
             )
             fig.update_traces(marker=dict(size=8, opacity=0.8, line=dict(width=1, color='DarkSlateGrey')))
-            fig.update_layout(plot_bgcolor="rgba(0,0,0,0)", yaxis_visible=False, xaxis_visible=False)
+            fig.update_layout(
+                plot_bgcolor="rgba(0,0,0,0)", 
+                paper_bgcolor="rgba(0,0,0,0)",
+                yaxis_visible=False, 
+                xaxis_visible=False,
+                margin=dict(t=20, b=20, l=10, r=10)
+            )
             st.plotly_chart(fig, use_container_width=True)
         else:
             st.info("Not enough cohesive data to map visual trends.")
 
-    with col2:
-        st.subheader("📈 Data Health Metrics")
-        st.metric("Total Posts Sourced", total_fetched)
-        st.metric("Noise / Spam Filtered", spam_removed_count)
-        st.metric("High-Value Posts Analyzed", len(df_clean))
+    with col_health:
+        st.subheader("📈 Data Health & Noise Breakdown")
+        
+        # Clean Data Percentage Calculation
+        clean_pct = round((len(df_clean) / total_fetched * 100), 1) if total_fetched > 0 else 0
+        
+        # Stylized Modern Donut Chart
+        fig_spam = go.Figure(data=[go.Pie(
+            labels=['Clean Posts', 'Spam / Noise'], 
+            values=[len(df_clean), spam_removed_count],
+            hole=0.68,
+            marker=dict(
+                colors=['#6366F1', '#EC4899'], # Modern Indigo & Rose
+                line=dict(color='rgba(255,255,255,0.2)', width=2)
+            ),
+            hoverinfo='label+value+percent',
+            textinfo='none',
+            insidetextorientation='radial'
+        )])
+
+        fig_spam.update_layout(
+            showlegend=True,
+            legend=dict(orientation="h", yanchor="bottom", y=-0.15, xanchor="center", x=0.5),
+            margin=dict(t=10, b=30, l=10, r=10),
+            height=280,
+            paper_bgcolor="rgba(0,0,0,0)",
+            plot_bgcolor="rgba(0,0,0,0)",
+            annotations=[
+                dict(
+                    text=f"<b>{clean_pct}%</b><br><span style='font-size:12px;color:gray;'>Clean Yield</span>",
+                    x=0.5, y=0.5,
+                    font=dict(size=22),
+                    showarrow=False
+                )
+            ]
+        )
+        
+        st.plotly_chart(fig_spam, use_container_width=True)
+        
+        # Summary Metrics beneath the chart
+        m1, m2 = st.columns(2)
+        m1.metric("Total Fetched", total_fetched)
+        m2.metric("Spam Removed", spam_removed_count)
 
     st.divider()
     st.subheader("💡 Actionable Whitespace Opportunities")
