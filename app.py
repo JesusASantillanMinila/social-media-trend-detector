@@ -10,6 +10,8 @@ import numpy as np
 from pydantic import BaseModel, Field
 from google.genai.types import GenerateContentConfig
 import plotly.express as px
+import plotly.graph_objects as go
+import time
 
 # --- Pydantic Models ---
 class TrendInsight(BaseModel):
@@ -22,9 +24,10 @@ class TrendInsight(BaseModel):
 class KeywordResponse(BaseModel):
     keywords: list[str] = Field(description="A list of semantically related words.")
 
+# --- Streamlit Page Config ---
+st.set_page_config(page_title="Trend Whitespace Analyzer", page_icon="✨", layout="wide")
+
 # --- Credentials ---
-
-
 try:
     GEMINI_API_KEY = st.secrets["GEMINI_API_KEY"]
     BSKY_HANDLE = st.secrets["BSKY_HANDLE"]
@@ -33,9 +36,6 @@ except (KeyError, FileNotFoundError):
     GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
     BSKY_HANDLE = os.environ.get("BSKY_HANDLE") 
     BSKY_APP_PASSWORD = os.environ.get("BSKY_APP_PASSWORD") 
-
-if not GEMINI_API_KEY:
-    st.warning("Please configure your environmental variables.")
 
 # --- Functions ---
 @st.cache_data(show_spinner=False)
@@ -79,7 +79,6 @@ def fetch_bluesky_posts(query, target_count):
     session_resp = requests.post(session_url, json=session_data).json()
     
     if "accessJwt" not in session_resp:
-        st.error("Failed to authenticate with Bluesky.")
         return pd.DataFrame()
         
     auth_token = session_resp["accessJwt"]
@@ -153,7 +152,6 @@ def cluster_social_posts(df, cluster_fraction, sample_fraction):
     model = load_sentence_model()
     embeddings = model.encode(df['text'].tolist())
     
-    # 5D UMAP for HDBSCAN clustering
     umap_model = umap.UMAP(n_neighbors=30, n_components=5, min_dist=0.0, metric='cosine', random_state=42)
     reduced_embeddings = umap_model.fit_transform(embeddings)
     
@@ -164,7 +162,6 @@ def cluster_social_posts(df, cluster_fraction, sample_fraction):
     clusterer = hdbscan.HDBSCAN(min_cluster_size=dynamic_min_cluster_size, min_samples=dynamic_min_samples, metric='euclidean')
     df['cluster_id'] = clusterer.fit_predict(reduced_embeddings)
     
-    # 2D UMAP for visualization purposes
     umap_2d = umap.UMAP(n_components=2, min_dist=0.0, metric='cosine', random_state=42)
     embeddings_2d = umap_2d.fit_transform(embeddings)
     df['x'] = embeddings_2d[:, 0]
@@ -216,73 +213,122 @@ def extract_actionable_insights(df_clustered, seed_keyword):
     
     return df_clustered
 
-# --- Streamlit UI ---
-st.set_page_config(page_title="Trend Whitespace Analyzer", layout="wide")
-st.title("Trend Whitespace Analyzer")
+# --- UI Layout ---
+st.title("✨ Trend Whitespace Analyzer")
+st.markdown("Discover emerging market whitespace and hidden consumer pain points from everyday social conversations.")
 
-# Top Inputs
-col1, col2 = st.columns(2)
-with col1:
-    seed_keyword = st.text_input("Initial Keyword", "world cup")
-with col2:
-    spam_threshold = st.slider("Spam Filter Threshold", 0.0, 1.0, 0.1)
+if not GEMINI_API_KEY:
+    st.warning("⚠️ Please configure your environmental variables to proceed.")
 
-if st.button("Run Analysis"):
+# --- Upperbar Control Panel ---
+# Using a bordered container to visually group the inputs at the top of the page
+with st.container(border=True):
+    # vertical_alignment="bottom" ensures the run button lines up perfectly with the input boxes
+    col1, col2, col3 = st.columns([2, 2, 1], vertical_alignment="bottom")
+    
+    with col1:
+        seed_keyword = st.text_input("Core Topic / Keyword", "world cup")
+    with col2:
+        spam_threshold = st.slider("Spam Filter Strictness", 0.0, 1.0, 0.1, help="Lower values filter out more spam.")
+    with col3:
+        run_btn = st.button("🚀 Run Analysis", type="primary", use_container_width=True)
+
+# Main Execution
+if run_btn:
     if not BSKY_HANDLE or not GEMINI_API_KEY:
-        st.error("Please ensure your BSKY_HANDLE, BSKY_APP_PASSWORD, and GEMINI_API_KEY environment variables are set.")
+        st.error("Missing credentials. Please check your environment variables.")
         st.stop()
 
-    with st.spinner("Fetching data and analyzing trends..."):
-        # 1. Background Keyword Expansion (Hidden from user)
+    # Step-by-Step Status Container
+    with st.status("Initializing Trend Engine...", expanded=True) as status:
+        
+        # 1. Background Keyword Expansion
+        st.write("🧠 Contextualizing keyword...")
         related_words = get_related_keywords(seed_keyword, num_related=3)
         all_keywords = [seed_keyword] + [item.replace(" ", "") for item in related_words]
+        st.markdown(f"**Expanded Search Vectors:** `{', '.join(all_keywords)}`")
         
-        # 2. Fetch Posts
+        # 2. Fetch Posts incrementally
+        st.write("📡 Fetching raw social signals...")
+        progress_bar = st.progress(0)
         all_posts = []
-        for keyword in all_keywords:
-            df_temp = fetch_bluesky_posts(keyword, target_count=500) # Lowered for speed in UI, adjust as needed
+        
+        for idx, keyword in enumerate(all_keywords):
+            df_temp = fetch_bluesky_posts(keyword, target_count=500)
             all_posts.append(df_temp)
+            # Update progress bar
+            progress_bar.progress((idx + 1) / len(all_keywords))
             
         df_combined = pd.concat(all_posts, ignore_index=True)
         total_fetched = len(df_combined)
+        progress_bar.empty() # Clear the bar when done
         
         # 3. Filter Spam
+        st.write("🧹 Scrubbing spam and low-value noise...")
         df_clean, spam_removed_count = filter_spam_posts(df_combined, threshold=spam_threshold)
+        
+        # Show a quick pie chart in the status window
+        fig_spam = go.Figure(data=[go.Pie(labels=['Clean Data', 'Spam Removed'], 
+                                          values=[len(df_clean), spam_removed_count],
+                                          hole=.4, marker_colors=['#00CC96', '#EF553B'])])
+        fig_spam.update_layout(margin=dict(t=0, b=0, l=0, r=0), height=200)
+        st.plotly_chart(fig_spam, use_container_width=True)
         
         # 4. Cluster & Extract
         if not df_clean.empty:
+            st.write("🌌 Mapping semantic clusters using UMAP & HDBSCAN...")
             df_clustered = cluster_social_posts(df_clean, cluster_fraction=0.01, sample_fraction=0.002)
+            
+            st.write("🤖 Generating actionable business insights with Gemini...")
             df_labeled = extract_actionable_insights(df_clustered, seed_keyword)
             
-            # --- Layout Tabs ---
-            tab1, tab2 = st.tabs(["Clustering & Results", "Spam Metrics"])
-            
-            with tab1:
-                st.subheader("Cluster Visualization")
-                # Scatter plot using the 2D UMAP coordinates
-                df_viz = df_labeled.dropna(subset=['trend_name'])
-                if not df_viz.empty:
-                    fig = px.scatter(
-                        df_viz, x='x', y='y', color='trend_name', 
-                        hover_data=['text'], title="Post Clusters via UMAP",
-                        color_discrete_sequence=px.colors.qualitative.Pastel
-                    )
-                    st.plotly_chart(fig, use_container_width=True)
-                else:
-                    st.info("Not enough data to map trends.")
-
-                st.subheader("Extracted Trends & Strategies")
-                # Group by cluster ID to show unique insights
-                unique_insights = df_labeled.drop_duplicates(subset=['cluster_id']).dropna(subset=['trend_name'])
-                display_cols = ['trend_name', 'key_products', 'pain_point', 'strategy', 'actionability_score']
-                st.dataframe(unique_insights[display_cols], use_container_width=True)
-
-            with tab2:
-                st.subheader("Spam Filter Metrics")
-                col_m1, col_m2, col_m3 = st.columns(3)
-                col_m1.metric("Total Posts Fetched", total_fetched)
-                col_m2.metric("Spam Posts Removed", spam_removed_count)
-                col_m3.metric("Clean Posts Analyzed", len(df_clean))
-                
+            status.update(label="Analysis Complete!", state="complete", expanded=False)
         else:
-            st.warning("No posts remaining after spam filtering.")
+            status.update(label="Process Halted: No data remained after filtering.", state="error")
+            st.stop()
+
+    # --- Final Results Layout ---
+    st.success(f"Successfully processed {total_fetched} posts and extracted key insights!")
+    
+    col1, col2 = st.columns([2, 1])
+    
+    with col1:
+        st.subheader("📊 Semantic Trend Map")
+        df_viz = df_labeled.dropna(subset=['trend_name'])
+        if not df_viz.empty:
+            fig = px.scatter(
+                df_viz, x='x', y='y', color='trend_name', 
+                hover_data=['text'],
+                color_discrete_sequence=px.colors.qualitative.Bold
+            )
+            fig.update_traces(marker=dict(size=8, opacity=0.8, line=dict(width=1, color='DarkSlateGrey')))
+            fig.update_layout(plot_bgcolor="rgba(0,0,0,0)", yaxis_visible=False, xaxis_visible=False)
+            st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.info("Not enough cohesive data to map visual trends.")
+
+    with col2:
+        st.subheader("📈 Data Health Metrics")
+        st.metric("Total Posts Sourced", total_fetched)
+        st.metric("Noise / Spam Filtered", spam_removed_count)
+        st.metric("High-Value Posts Analyzed", len(df_clean))
+
+    st.divider()
+    st.subheader("💡 Actionable Whitespace Opportunities")
+    
+    unique_insights = df_labeled.drop_duplicates(subset=['cluster_id']).dropna(subset=['trend_name'])
+    
+    if not unique_insights.empty:
+        for _, row in unique_insights.iterrows():
+            with st.container(border=True):
+                st.markdown(f"### 🔥 {row['trend_name']}")
+                
+                c1, c2 = st.columns([3, 1])
+                with c1:
+                    st.markdown(f"**Consumer Pain Point:** {row['pain_point']}")
+                    st.markdown(f"**Capitalization Strategy:** {row['strategy']}")
+                    st.markdown(f"**Key Products/Ingredients:** `{row['key_products']}`")
+                with c2:
+                    st.metric("Actionability Score", f"{row['actionability_score']} / 10")
+    else:
+        st.write("No distinct insights could be generated from this dataset.")
