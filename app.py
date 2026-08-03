@@ -244,7 +244,7 @@ if run_btn:
         st.write("🧠 Contextualizing keyword...")
         related_words = get_related_keywords(seed_keyword, num_related=3)
         all_keywords = [seed_keyword] + [item.replace(" ", "") for item in related_words]
-        st.markdown(f"**Expanded Search Vectors:** `{', '.join(all_keywords)}`")
+        # st.markdown(f"**Expanded Search Vectors:** `{', '.join(all_keywords)}`")
         
         # 2. Fetch Posts incrementally
         st.write("📡 Fetching raw social signals...")
