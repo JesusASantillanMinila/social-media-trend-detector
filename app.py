@@ -27,8 +27,8 @@ class KeywordResponse(BaseModel):
 
 try:
     GEMINI_API_KEY = st.secrets["GEMINI_API_KEY"]
-    BSKY_HANDLE = st.secrets("BSKY_HANDLE") 
-    BSKY_APP_PASSWORD = st.secrets("BSKY_APP_PASSWORD") 
+    BSKY_HANDLE = st.secrets["BSKY_HANDLE"]
+    BSKY_APP_PASSWORD = st.secrets["BSKY_APP_PASSWORD"] 
 except (KeyError, FileNotFoundError):
     GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
     BSKY_HANDLE = os.environ.get("BSKY_HANDLE") 
