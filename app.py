@@ -282,7 +282,7 @@ if run_btn:
     
     col_map, col_health = st.columns([2, 1])
     
-with col_map:
+    with col_map:
             st.subheader("📊 Semantic Trend Map")
             df_viz = df_labeled.dropna(subset=['trend_name'])
             if not df_viz.empty:
