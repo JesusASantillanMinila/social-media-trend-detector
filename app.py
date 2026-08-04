@@ -6,6 +6,7 @@ import requests
 import pandas as pd
 import os
 from google import genai
+from google.genai import errors  # Added for precise error handling
 import numpy as np
 from pydantic import BaseModel, Field
 from google.genai.types import GenerateContentConfig
@@ -37,6 +38,45 @@ except (KeyError, FileNotFoundError):
     BSKY_HANDLE = os.environ.get("BSKY_HANDLE") 
     BSKY_APP_PASSWORD = os.environ.get("BSKY_APP_PASSWORD") 
 
+# --- Fallback Generation Helper ---
+def generate_with_fallback(client, prompt, schema_model):
+    """
+    Attempts to generate structured content with the primary model. 
+    Falls back to Gemini 3.1 Flash Lite if RPM/TPM limits (429) or timeouts occur.
+    """
+    config = GenerateContentConfig(
+        response_mime_type="application/json",
+        response_schema=schema_model,
+    )
+    
+    try:
+        # Primary call
+        response = client.models.generate_content(
+            model='gemini-3.5-flash-lite', 
+            contents=prompt,
+            config=config
+        )
+        return response.parsed
+        
+    except errors.APIError as e:
+        # Triggers on API Errors (like 429 RESOURCE_EXHAUSTED)
+        response = client.models.generate_content(
+            model='gemini-3.1-flash-lite', 
+            contents=prompt,
+            config=config
+        )
+        return response.parsed
+        
+    except Exception as e:
+        # Triggers on broader client-side connection drops or timeouts
+        response = client.models.generate_content(
+            model='gemini-3.1-flash-lite', 
+            contents=prompt,
+            config=config
+        )
+        return response.parsed
+
+
 # --- Functions ---
 @st.cache_data(show_spinner=False)
 def get_related_keywords(primary_word: str, num_related: int = 4) -> list[str]:
@@ -60,16 +100,10 @@ def get_related_keywords(primary_word: str, num_related: int = 4) -> list[str]:
     - Do NOT include the '#' symbol.
     """
     try:
-        response = client.models.generate_content(
-            model='gemini-3.5-flash-lite', 
-            contents=prompt,
-            config=GenerateContentConfig(
-                response_mime_type="application/json",
-                response_schema=KeywordResponse,
-            )
-        )
-        return response.parsed.keywords[:num_related]
+        parsed_data = generate_with_fallback(client, prompt, KeywordResponse)
+        return parsed_data.keywords[:num_related]
     except Exception as e:
+        # Ultimate fail-safe if both models fail
         return []
 
 @st.cache_data(show_spinner=False)
@@ -193,15 +227,8 @@ def extract_actionable_insights(df_clustered, seed_keyword):
         """
         
         try:
-            response = client.models.generate_content(
-                model='gemini-3.5-flash-lite', 
-                contents=prompt,
-                config=GenerateContentConfig(
-                    response_mime_type="application/json",
-                    response_schema=TrendInsight,
-                )
-            )
-            cluster_insights[cluster_id] = response.parsed
+            parsed_data = generate_with_fallback(client, prompt, TrendInsight)
+            cluster_insights[cluster_id] = parsed_data
         except Exception:
             continue
             
@@ -244,7 +271,6 @@ if run_btn:
         st.write("🧠 Contextualizing keyword...")
         related_words = get_related_keywords(seed_keyword, num_related=3)
         all_keywords = [seed_keyword] + [item.replace(" ", "") for item in related_words]
-        # st.markdown(f"**Expanded Search Vectors:** `{', '.join(all_keywords)}`")
         
         # 2. Fetch Posts incrementally
         st.write("📡 Fetching raw social signals...")
@@ -302,13 +328,11 @@ if run_btn:
                         showticklabels=False, 
                         title="",             
                         showgrid=False,       
-                        # Outer Boundary & Ruler Ticks
                         showline=True,
                         ticks="outside",      
                         ticklen=8,            
                         tickwidth=2,          
                         tickcolor="gray",
-                        # Central Crosshair
                         zeroline=True,        
                         zerolinewidth=2,      
                         zerolinecolor="rgba(128, 128, 128, 0.4)" 
@@ -317,13 +341,11 @@ if run_btn:
                         showticklabels=False, 
                         title="",             
                         showgrid=False,       
-                        # Outer Boundary & Ruler Ticks
                         showline=True,
                         ticks="outside",      
                         ticklen=8,            
                         tickwidth=2,          
                         tickcolor="gray",
-                        # Central Crosshair
                         zeroline=True,        
                         zerolinewidth=2,      
                         zerolinecolor="rgba(128, 128, 128, 0.4)" 
@@ -337,16 +359,14 @@ if run_btn:
     with col_health:
         st.subheader("📈 Data Health & Noise Breakdown")
         
-        # Clean Data Percentage Calculation
         clean_pct = round((len(df_clean) / total_fetched * 100), 1) if total_fetched > 0 else 0
         
-        # Stylized Modern Donut Chart
         fig_spam = go.Figure(data=[go.Pie(
             labels=['Clean Posts', 'Spam / Noise'], 
             values=[len(df_clean), spam_removed_count],
             hole=0.68,
             marker=dict(
-                colors=['#6366F1', '#EC4899'], # Modern Indigo & Rose
+                colors=['#6366F1', '#EC4899'],
                 line=dict(color='rgba(255,255,255,0.2)', width=2)
             ),
             hoverinfo='label+value+percent',
@@ -373,7 +393,6 @@ if run_btn:
         
         st.plotly_chart(fig_spam, use_container_width=True)
         
-        # Summary Metrics beneath the chart
         m1, m2 = st.columns(2)
         m1.metric("Total Fetched", total_fetched)
         m2.metric("Spam Removed", spam_removed_count)
