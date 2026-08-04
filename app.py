@@ -299,20 +299,36 @@ if run_btn:
                     plot_bgcolor="rgba(0,0,0,0)", 
                     paper_bgcolor="rgba(0,0,0,0)",
                     xaxis=dict(
-                        showline=True,        
                         showticklabels=False, 
                         title="",             
                         showgrid=False,       
-                        zeroline=False        
+                        # Outer Boundary & Ruler Ticks
+                        showline=True,
+                        ticks="outside",      
+                        ticklen=8,            
+                        tickwidth=2,          
+                        tickcolor="gray",
+                        # Central Crosshair
+                        zeroline=True,        
+                        zerolinewidth=2,      
+                        zerolinecolor="rgba(128, 128, 128, 0.4)" 
                     ),
                     yaxis=dict(
-                        showline=True,        
                         showticklabels=False, 
                         title="",             
                         showgrid=False,       
-                        zeroline=False        
+                        # Outer Boundary & Ruler Ticks
+                        showline=True,
+                        ticks="outside",      
+                        ticklen=8,            
+                        tickwidth=2,          
+                        tickcolor="gray",
+                        # Central Crosshair
+                        zeroline=True,        
+                        zerolinewidth=2,      
+                        zerolinecolor="rgba(128, 128, 128, 0.4)" 
                     ),
-                    margin=dict(t=20, b=20, l=10, r=10)
+                    margin=dict(t=20, b=20, l=10, r=10)               
                 )
                 st.plotly_chart(fig, use_container_width=True)
             else:
