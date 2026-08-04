@@ -282,26 +282,41 @@ if run_btn:
     
     col_map, col_health = st.columns([2, 1])
     
-    with col_map:
-        st.subheader("📊 Semantic Trend Map")
-        df_viz = df_labeled.dropna(subset=['trend_name'])
-        if not df_viz.empty:
-            fig = px.scatter(
-                df_viz, x='x', y='y', color='trend_name', 
-                hover_data=['text'],
-                color_discrete_sequence=px.colors.qualitative.Bold
-            )
-            fig.update_traces(marker=dict(size=8, opacity=0.8, line=dict(width=1, color='DarkSlateGrey')))
-            fig.update_layout(
-                plot_bgcolor="rgba(0,0,0,0)", 
-                paper_bgcolor="rgba(0,0,0,0)",
-                yaxis_visible=False, 
-                xaxis_visible=False,
-                margin=dict(t=20, b=20, l=10, r=10)
-            )
-            st.plotly_chart(fig, use_container_width=True)
-        else:
-            st.info("Not enough cohesive data to map visual trends.")
+with col_map:
+            st.subheader("📊 Semantic Trend Map")
+            df_viz = df_labeled.dropna(subset=['trend_name'])
+            if not df_viz.empty:
+                
+                fig = px.scatter(
+                    df_viz, x='x', y='y', color='trend_name', 
+                    hover_data={'x': False, 'y': False, 'text': True}, 
+                    color_discrete_sequence=px.colors.qualitative.Bold
+                )
+                fig.update_traces(marker=dict(size=8, opacity=0.8, line=dict(width=1, color='DarkSlateGrey')))
+                
+                
+                fig.update_layout(
+                    plot_bgcolor="rgba(0,0,0,0)", 
+                    paper_bgcolor="rgba(0,0,0,0)",
+                    xaxis=dict(
+                        showline=True,        
+                        showticklabels=False, 
+                        title="",             
+                        showgrid=False,       
+                        zeroline=False        
+                    ),
+                    yaxis=dict(
+                        showline=True,        
+                        showticklabels=False, 
+                        title="",             
+                        showgrid=False,       
+                        zeroline=False        
+                    ),
+                    margin=dict(t=20, b=20, l=10, r=10)
+                )
+                st.plotly_chart(fig, use_container_width=True)
+            else:
+                st.info("Not enough cohesive data to map visual trends.")
 
     with col_health:
         st.subheader("📈 Data Health & Noise Breakdown")
@@ -350,7 +365,7 @@ if run_btn:
     st.divider()
     st.subheader("💡 Actionable Whitespace Opportunities")
     
-    unique_insights = df_labeled.drop_duplicates(subset=['cluster_id']).dropna(subset=['trend_name'])
+    unique_insights = df_labeled.drop_duplicates(subset=['cluster_id']).dropna(subset=['trend_name']).sort_values(by='actionability_score', ascending=False)
     
     if not unique_insights.empty:
         for _, row in unique_insights.iterrows():
